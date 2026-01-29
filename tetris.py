@@ -2,6 +2,10 @@
 import os
 import time
 import random
+import sys
+import select
+import tty
+import termios
 
 # 게임 보드 크기
 BOARD_WIDTH = 10
@@ -28,12 +32,7 @@ COLORS = {
     'J': '\033[94m',  # Blue
     'L': '\033[38;5;208m', # Orange
     'EMPTY': '\033[0m',   # Reset color for empty cells
-    'BLACK': '\033[0m'    # Black - This one seems redundant now, but keep for other uses or clear.
 }
-
-def clear_screen():
-    """화면을 지웁니다."""
-    os.system('cls' if os.name == 'nt' else 'clear')
 
 def create_board():
     """게임 보드를 생성합니다."""
@@ -70,7 +69,9 @@ def lock_piece(board, piece):
 
 def draw_board(board, piece, score):
     """게임 보드를 그립니다."""
-    clear_screen()
+    # Move cursor to top-left (Home) instead of clearing entire screen
+    sys.stdout.write('\033[H')
+    
     print("점수:", score)
     temp_board = [row[:] for row in board]
     for y, row in enumerate(piece['shape']):
@@ -93,7 +94,7 @@ def draw_board(board, piece, score):
 
     # Print bottom border
     print("+" + "—" * (BOARD_WIDTH * 2) + "+")
-
+    sys.stdout.flush()
 
 def clear_lines(board):
     """완성된 라인을 지우고 점수를 반환합니다."""
@@ -104,24 +105,9 @@ def clear_lines(board):
         new_board.insert(0, [0 for _ in range(BOARD_WIDTH)])
     return new_board, lines_cleared * 10
 
-
-import os
-import time
-import random
-import sys
-import tty
-import termios
-
-def get_key():
-    """사용자 입력을 즉시 반환합니다."""
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(sys.stdin.fileno())
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    return ch
+def is_data():
+    """입력이 있는지 확인합니다."""
+    return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
 
 def rotate_piece(piece):
     """테트로미노를 회전합니다."""
@@ -131,6 +117,9 @@ def rotate_piece(piece):
 
 def main():
     """게임의 메인 루프입니다."""
+    # Hide cursor and clear screen initially
+    sys.stdout.write('\033[?25l\033[2J')
+    
     board = create_board()
     score = 0
     game_over = False
@@ -138,50 +127,66 @@ def main():
     
     fall_time = 0
     fall_speed = 0.5
+    last_time = time.time()
 
-    while not game_over:
-        draw_board(board, current_piece, score)
-        
-        key = get_key()
-        if key == 'q':
-            game_over = True
-        elif key == 'a':
-            current_piece['x'] -= 1
-            if not is_valid_position(board, current_piece):
-                current_piece['x'] += 1
-        elif key == 'd':
-            current_piece['x'] += 1
-            if not is_valid_position(board, current_piece):
-                current_piece['x'] -= 1
-        elif key == 's':
-            current_piece['y'] += 1
-            if not is_valid_position(board, current_piece):
-                current_piece['y'] -= 1
-        elif key == 'w':
-            rotate_piece(current_piece)
-            if not is_valid_position(board, current_piece):
-                rotate_piece(current_piece)
-                rotate_piece(current_piece)
-                rotate_piece(current_piece)
+    # Save terminal settings
+    old_settings = termios.tcgetattr(sys.stdin)
+    
+    try:
+        # Set terminal to raw mode once
+        tty.setcbreak(sys.stdin.fileno())
 
+        while not game_over:
+            current_time = time.time()
+            dt = current_time - last_time
+            last_time = current_time
 
-        fall_time += 0.1
-        if fall_time >= fall_speed:
-            fall_time = 0
-            current_piece['y'] += 1
-            if not is_valid_position(board, current_piece):
-                current_piece['y'] -= 1
-                lock_piece(board, current_piece)
-                board, points = clear_lines(board)
-                score += points
-                current_piece = new_tetromino()
-                if not is_valid_position(board, current_piece):
+            draw_board(board, current_piece, score)
+            
+            # Non-blocking input check
+            if is_data():
+                key = sys.stdin.read(1)
+                if key == 'q':
                     game_over = True
-        
-        time.sleep(0.1)
+                elif key == 'a':
+                    current_piece['x'] -= 1
+                    if not is_valid_position(board, current_piece):
+                        current_piece['x'] += 1
+                elif key == 'd':
+                    current_piece['x'] += 1
+                    if not is_valid_position(board, current_piece):
+                        current_piece['x'] -= 1
+                elif key == 's':
+                    current_piece['y'] += 1
+                    if not is_valid_position(board, current_piece):
+                        current_piece['y'] -= 1
+                elif key == 'w':
+                    rotate_piece(current_piece)
+                    if not is_valid_position(board, current_piece):
+                        rotate_piece(current_piece)
+                        rotate_piece(current_piece)
+                        rotate_piece(current_piece)
+            
+            fall_time += dt
+            if fall_time >= fall_speed:
+                fall_time = 0
+                current_piece['y'] += 1
+                if not is_valid_position(board, current_piece):
+                    current_piece['y'] -= 1
+                    lock_piece(board, current_piece)
+                    board, points = clear_lines(board)
+                    score += points
+                    current_piece = new_tetromino()
+                    if not is_valid_position(board, current_piece):
+                        game_over = True
+            
+            time.sleep(0.05) # Prevent high CPU usage
 
-
-    print("게임 오버! 최종 점수:", score)
+    finally:
+        # Restore terminal settings and show cursor
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+        sys.stdout.write('\033[?25h')
+        print(f"\n게임 오버! 최종 점수: {score}")
 
 if __name__ == "__main__":
     main()

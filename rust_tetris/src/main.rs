@@ -10,7 +10,7 @@ use crossterm::{
 };
 use rand::Rng;
 use std::io::{stdout, Result, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const WIDTH: u16 = 10;
 const HEIGHT: u16 = 20;
@@ -134,6 +134,7 @@ fn draw_board(
     board: &Vec<Vec<(u8, Color)>>,
     piece: &Piece,
     score: u32,
+    level: u32,
 ) -> Result<()> {
     execute!(stdout, MoveTo(0, 0))?;
     for y in 0..HEIGHT {
@@ -173,12 +174,14 @@ fn draw_board(
                 execute!(stdout, Print(" ."))?;
             }
         }
-        execute!(stdout, Print("\n"))?;
+        execute!(stdout, Print("\r\n"))?;
     }
     execute!(
         stdout,
         MoveTo(WIDTH * 2 + 5, 5),
-        Print(format!("Score: {}", score))
+        Print(format!("Score: {}", score)),
+        MoveTo(WIDTH * 2 + 5, 6),
+        Print(format!("Level: {}", level))
     )?;
     stdout.flush()?;
     Ok(())
@@ -198,9 +201,21 @@ fn main() -> Result<()> {
     let mut piece = get_random_piece();
     let mut score = 0;
     let mut game_over = false;
+    
+    let mut level = 1;
+    let mut total_lines_cleared = 0;
+    let mut drop_interval = Duration::from_millis(800);
+    let mut last_drop_time = Instant::now();
 
     loop {
-        if poll(Duration::from_millis(50))? {
+        let elapsed = last_drop_time.elapsed();
+        let timeout = if elapsed >= drop_interval {
+            Duration::from_millis(0)
+        } else {
+            drop_interval - elapsed
+        };
+
+        if poll(timeout)? {
             if let Event::Key(key_event) = read()? {
                 match key_event.code {
                     KeyCode::Char('q') => break,
@@ -221,7 +236,16 @@ fn main() -> Result<()> {
                         if check_collision(&board, &piece) {
                             piece.y -= 1;
                             merge_piece(&mut board, &piece);
-                            score += clear_lines(&mut board) * 10;
+                            let cleared = clear_lines(&mut board);
+                            if cleared > 0 {
+                                score += cleared * 100 * cleared; // Bonus for multiple lines
+                                total_lines_cleared += cleared;
+                                if total_lines_cleared >= level * 10 {
+                                    level += 1;
+                                    let new_millis = (800.0 * 0.9_f64.powi(level as i32 - 1)) as u64;
+                                    drop_interval = Duration::from_millis(std::cmp::max(100, new_millis));
+                                }
+                            }
                             piece = get_random_piece();
                             if check_collision(&board, &piece) {
                                 game_over = true;
@@ -238,25 +262,36 @@ fn main() -> Result<()> {
                     _ => {}
                 }
             }
-        } else {
-            // Gravity
+        }
+
+        if last_drop_time.elapsed() >= drop_interval {
             piece.y += 1;
             if check_collision(&board, &piece) {
                 piece.y -= 1;
                 merge_piece(&mut board, &piece);
-                score += clear_lines(&mut board) * 10;
+                let cleared = clear_lines(&mut board);
+                if cleared > 0 {
+                    score += cleared * 100 * cleared;
+                    total_lines_cleared += cleared;
+                    if total_lines_cleared >= level * 10 {
+                        level += 1;
+                        let new_millis = (800.0 * 0.9_f64.powi(level as i32 - 1)) as u64;
+                        drop_interval = Duration::from_millis(std::cmp::max(100, new_millis));
+                    }
+                }
                 piece = get_random_piece();
                 if check_collision(&board, &piece) {
                     game_over = true;
                 }
             }
+            last_drop_time = Instant::now();
         }
 
         if game_over {
             break;
         }
 
-        draw_board(&mut stdout, &board, &piece, score)?;
+        draw_board(&mut stdout, &board, &piece, score, level)?;
     }
 
     execute!(
