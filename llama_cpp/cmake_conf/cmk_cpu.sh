@@ -1,0 +1,1 @@
+cmake .. -G Ninja -DGGML_OPENMP=ON -DGGML_ARM_COMPUTE=ON -DCMAKE_C_FLAGS="-O3 -march=armv8.2-a+dotprod -flmcpu=native" -DCMAKE_CXX_FLAGS="-O3 -march=armv8.2-a+dotprod -mcpu=native" -DCMAKE_BUILD_TYPE=Release

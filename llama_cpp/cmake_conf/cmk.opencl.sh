@@ -1,0 +1,5 @@
+cmake .. -G Ninja -B build-android \
+  -DGGML_OPENCL=ON \
+  -DGGML_OPENCL_EMBED_KERNELS=ON \
+  -DGGML_OPENCL_USE_ADRENO_KERNELS=ON \
+  -DCMAKE_BUILD_TYPE=Release

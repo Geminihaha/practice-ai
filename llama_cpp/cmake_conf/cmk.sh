@@ -1,0 +1,1 @@
+cmake .. -G Ninja -DGGML_VULKAN=ON -DGGML_VULKAN_CHECK_RESULTS=ON -DCMAKE_C_FLAGS="-O3 -march=armv8.2-a+dotprod -mtune=native" -DCMAKE_CXX_FLAGS="-O3 -march=armv8.2-a+dotprod -mtune=native" -DGGML_OPENMP=OFF -DGGML_NATIVE=OFF -DVulkan_GLSLC_EXECUTABLE=/data/data/com.termux/files/home/shaderc/build/glslc/glslc -DCMAKE_BUILD_TYPE=Release
